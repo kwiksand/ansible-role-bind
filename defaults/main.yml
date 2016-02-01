@@ -1,6 +1,15 @@
 # roles/bind/defaults/main.yml
 ---
 
+bind_packages_centos:
+  - bind
+  - bind-utils
+
+bind_zonefile_location: /var/named
+
+bind_enable_dnssec: true
+bind_chroot: false
+
 bind_zone_name: "example.com"
 bind_zone_networks:
   - "10.0.2"
@@ -20,6 +29,14 @@ bind_listen_ipv6:
 # List of hosts that are allowed to query this DNS server.
 bind_allow_query:
   - "localhost"
+
+# List of hosts that are allowed to query this DNS server.
+bind_allow_recurse: false
+
+# List of hosts that are allowed to query this DNS server.
+bind_forwarders: 
+  - "8.8.8.8"
+  - "8.8.4.4"
 
 # DNS round robin order (random or cyclic)
 bind_rrset_order: "random"

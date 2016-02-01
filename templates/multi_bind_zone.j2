@@ -1,0 +1,72 @@
+; Zone file for {{ item.zone_name }}
+; {{ ansible_managed }}
+
+$ORIGIN {{ item.zone_name }}.
+$TTL {{ bind_zone_ttl }}
+
+{% if item.zone_name_servers is defined %}
+@       IN      SOA     {{ item.zone_name_servers|first }}.{{ item.zone_name }}. {% if item.zone_hostmaster_email is string %}{{ item.zone_hostmaster_email }}.{{ item.zone_name }}{% else %}{{ bind_hostmaster_email }}{% endif %}. (
+{% else %}
+@       IN      SOA     {{ ansible_hostname }}.{{ item.zone_name }}. {% if item.zone_hostmaster_email is string %}{{ item.zone_hostmaster_email }}.{{ item.zone_name }}{% else %}{{ bind_hostmaster_email }}{% endif %}. (
+{% endif %}
+		        {% if item.zone_serial is defined %}{{ item.zone_serial }}{% else %}{{ timestamp.stdout }}{% endif %} ; serial, todays date #ZFSERIALNO
+			{{ bind_zone_time_to_refresh }} ; refresh
+		        {{ bind_zone_time_to_retry }} ; retry
+		        {{ bind_zone_time_to_expire }} ; expire
+		        {{ bind_zone_minimum_ttl }} ) ; minimum
+
+{% if item.zone_name_servers is defined %}
+{% for ns in item.zone_name_servers %}
+                     IN  NS     {{ ns }}.{{ item.zone_name }}.
+{% endfor %}
+{% else %}
+                     IN  NS     {{ ansible_hostname }}.{{ item.zone_name }}.
+{% endif %}
+{% if bind_other_name_servers is defined %}
+{% for ns in bind_other_name_servers %}
+                     IN  NS     {{ ns }}.
+{% endfor %}
+{% endif %}
+
+{% if bind_zone_mail_servers is defined %}
+{% for mail in bind_zone_mail_servers %}
+{% if loop.first %}@{% else %} {% endif %}                    IN  MX     {{ mail.preference}}  {{ mail.name }}.{{ item.zone_name }}.
+{% endfor %}
+{% endif %}
+
+{% if item.zone_hosts is defined %}
+{% for host in item.zone_hosts %}
+{% if host.break_comment is string %}
+
+; {{ host.break_comment }}
+{% else %}
+{% if host.ip is string %}
+{{ host.name.ljust(40) }} IN  A      {{ host.ip }} {% if host.comment is string %}; {{ host.comment }}{% endif %}
+
+{% else %}
+{% for ip in host.ip %}
+{{ host.name.ljust(40) }} IN  A      {{ ip }}
+{% endfor %}
+{% endif %}
+{% if host.ipv6 is defined %}
+{% if host.ipv6 is string %}
+{{ host.name.ljust(40) }} IN  AAAA   {{ host.ipv6 }} {% if host.comment is string %}; {{ host.comment }}{% endif %}
+
+{% else %}
+{% for ip6 in host.ipv6 %}
+{{ host.name.ljust(40) }} IN  AAAA   {{ ip6 }}
+{% endfor %}
+{% endif %}
+{% endif %}
+{% if host.aliases is defined %}
+{% for alias in host.aliases %}
+{{ alias.ljust(40) }} IN  CNAME  {{ host.name }}
+{% endfor %}
+{% endif %}
+{% endif %}
+{% endfor %}
+{% else %}
+{{ ansible_hostname.ljust(40) }} IN A     {{ ansible_default_ipv4.address }}
+{% endif %}
+{# vim: ft=text
+#}

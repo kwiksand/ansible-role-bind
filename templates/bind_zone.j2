@@ -5,15 +5,15 @@ $ORIGIN {{ bind_zone_name }}.
 $TTL {{ bind_zone_ttl }}
 
 {% if bind_zone_name_servers is defined %}
-@ IN SOA {{ bind_zone_name_servers|first }}.{{ bind_zone_name }}. {{ bind_zone_hostmaster_email }}.{{ bind_zone_name }}. (
+@	IN	SOA	{{ bind_zone_name_servers|first }}.{{ bind_zone_name }}. {{ bind_zone_hostmaster_email }}.{{ bind_zone_name }}. (
 {% else %}
-@ IN SOA {{ ansible_hostname }}.{{ bind_zone_name }}. {{ bind_zone_hostmaster_email }}.{{ bind_zone_name }}. (
+@	IN	SOA	{{ ansible_hostname }}.{{ bind_zone_name }}. {{ bind_zone_hostmaster_email }}.{{ bind_zone_name }}. (
 {% endif %}
-  {{ timestamp.stdout }}
-  {{ bind_zone_time_to_refresh }}
-  {{ bind_zone_time_to_retry }}
-  {{ bind_zone_time_to_expire }}
-  {{ bind_zone_minimum_ttl }} )
+	{{ timestamp.stdout }} ; serial, todays date + increment
+	{{ bind_zone_time_to_refresh }} ; refresh
+	{{ bind_zone_time_to_retry }} ; retry
+	{{ bind_zone_time_to_expire }} ; expire
+	{{ bind_zone_minimum_ttl }} ) ; minimum
 
 {% if bind_zone_name_servers is defined %}
 {% for ns in bind_zone_name_servers %}

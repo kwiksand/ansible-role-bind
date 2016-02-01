@@ -9,7 +9,33 @@
   yum:
     pkg: "{{ item }}"
     state: installed
-  with_items: bind_packages
+  with_items: bind_packages_centos
+  tags: bind
+
+- name: Install DNSSec extras
+  yum:
+    pkg: "{{ item }}"
+    state: installed
+  with_items: 
+    - haveged
+  when: bind_enable_dnssec == true
+  tags: bind
+
+- name: Start Haveged
+  service:
+    name: haveged
+    state: started
+    enabled: yes
+  when: bind_enable_dnssec == true
+  tags: bind
+
+- name: Install BIND Chroot Packages
+  yum:
+    pkg: "{{ item }}"
+    state: installed
+  with_items: 
+    - bind-chroot
+  when: bind_chroot == true
   tags: bind
 
 - name: Create serial

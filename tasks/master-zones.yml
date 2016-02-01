@@ -1,0 +1,32 @@
+- name: get Zone Serials
+  shell: SNUM=$((`cat /var/named/{{ item.zone_name }} | grep ZFSERIALNO | xargs | awk ' { print $1 } '` + 1 )); if [ $SNUM -gt 1 ]; then echo $SNUM; else echo `date "+%Y%m%d01"`; fi
+  register: forward_zone_serial
+  tags: bind
+
+- debug: var=forward_zone_serial
+  tags: bind
+
+- name: Create forward lookup zone file
+  template:
+    src: multi_bind_zone.j2
+    dest: "/var/named/{{ item.zone_name }}"
+    owner: root
+    group: named
+    mode: "0640"
+    setype: named_zone_t
+#    validate: "named-checkzone {{ item.zone_name }} %s"
+  notify: restart bind
+  tags: bind
+
+#- name: Create forward lookup zone file
+#  template:
+#    src: bind_zone.j2
+#    dest: "/var/named/{{ bind_zone_name }}"
+#    owner: root
+#    group: named
+#    mode: "0640"
+#    setype: named_zone_t
+#    validate: "named-checkzone {{  bind_zone_name }} %s"
+#  notify: restart bind
+#  tags: bind
+#  when: bind_master_zones is not defined

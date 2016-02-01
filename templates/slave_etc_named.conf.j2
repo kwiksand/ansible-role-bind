@@ -23,13 +23,24 @@ options {
 	allow-transfer  { {% for acl in bind_acls %}"{{ acl.name }}"; {% endfor %}};
 {% endif %}
 
+{% if bind_forwarders is defined and bind_forwarders != false %}
+	forwarders { {{ bind_forwarders|join(';') }}; };
+{% endif %}
+
+{% if bind_allow_recurse is defined and bind_allow_recurse != false %}
+	recursion yes;
+	allow-recursion { {{ bind_allow_recurse|join(';') }}; };
+{% else %}
 	recursion no;
+{% endif %}
 
 	rrset-order { order {{ bind_rrset_order }}; };
 
+{% if bind_enable_dnssec is defined and bind_enable_dnssec == true %}
 	dnssec-enable yes;
 	dnssec-validation yes;
 	dnssec-lookaside auto;
+{% endif %}
 
 	/* Path to ISC DLV key */
 	bindkeys-file "/etc/named.iscdlv.key";
@@ -55,18 +66,22 @@ zone "." IN {
 include "/etc/named.rfc1912.zones";
 include "/etc/named.root.key";
 
-zone "{{ bind_zone_name }}" IN {
+{% if bind_master_zones is defined %}
+{% for zone in bind_master_zones %}
+zone "{{ zone.zone_name }}" IN {
   type slave;
   masters { {{ bind_zone_master_server_ip }}; };
-  file "{{ bind_zone_name }}";
+  file "{{ zone.zone_name }}{% if bind_enable_dnssec == true %}.signed{% endif %}";
 };
+{% endfor %}
+{% endif %}
 
 {% if bind_zone_networks is defined %}
 {% for network in bind_zone_networks %}
 zone "{{ network|reverse_lookup_zone }}" IN {
   type slave;
   masters { {{ bind_zone_master_server_ip }}; };
-  file "{{ network|reverse_lookup_zone }}";
+  file "{{ network|reverse_lookup_zone }}{% if bind_enable_dnssec == true %}.signed{% endif %}";
 };
 {% endfor %}
 {% endif %}

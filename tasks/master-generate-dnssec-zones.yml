@@ -1,0 +1,178 @@
+# roles/bind/tasks/master.yml
+# Set up a BIND master server
+---
+
+- name: Main BIND config file (master)
+  template:
+    src: master_etc_named.conf.j2
+    dest: /etc/named.conf
+    owner: root
+    group: named
+    mode: '0640'
+    setype: named_conf_t
+#    validate: 'named-checkconf %s'
+  notify: restart bind
+  tags: bind
+
+######### With Ansible 2.0, we neaten what happend below
+#- name: build zone files
+#  include: master-zones.yml
+#  with_items: bind_master_zones
+
+- name: build latest serial
+  shell: DATE=`date "+%H%M"`; INCR=$(($DATE / 24)); echo `date "+%Y%m%d"`$INCR
+  register: named_serial
+  tags: bind
+########### Note: This has the caveat that the serial will only change when calculated once every 14 minutes throughout the day
+
+- debug: var=named_serial
+  tags: bind
+
+- file: state=directory path="{{ bind_zonefile_location }}/dnssec_keys"
+  tags: bind
+
+- file: state=directory path="{{ bind_zonefile_location }}/zone_fragments"
+  tags: bind
+
+- file: state=directory path="{{ bind_zonefile_location }}/zone_fragments/{{ item.zone_name }}"
+  with_items: bind_master_zones
+  tags: bind
+
+- file: state=directory path="{{ bind_zonefile_location }}/dnssec_keys/ZSK/{{ item.zone_name }}"
+  with_items: bind_master_zones
+  tags: bind
+
+- file: state=directory path="{{ bind_zonefile_location }}/dnssec_keys/KSK/{{ item.zone_name }}"
+  with_items: bind_master_zones
+  tags: bind
+
+- set_fact: bind_zonefile_extra_path=/zone_fragments
+
+- name: Create DNSSec Zone Keyfiles
+  shell:  if [ `find "{{ bind_zonefile_location }}/dnssec_keys/ZSK/{{ item.zone_name }}" -iname "K{{ item.zone_name }}\.*.key" | wc -l` -eq 0 ]; then dnssec-keygen -K "{{ bind_zonefile_location }}/dnssec_keys/ZSK/{{ item.zone_name }}" -a RSASHA512 -b 2048 -n ZONE -C "{{ item.zone_name }}"; fi; cp {{ bind_zonefile_location }}/dnssec_keys/ZSK/{{ item.zone_name }}/*.key {{ bind_zonefile_location }}/zone_fragments/{{ item.zone_name }}/98-ZSK-dnssec
+  with_items: bind_master_zones
+  tags: bind
+
+- name: Create DNSSec Key Keyfiles
+  shell:  if [ `find "{{ bind_zonefile_location }}/dnssec_keys/KSK/{{ item.zone_name }}" -iname "K{{ item.zone_name }}\.*.key" | wc -l` -eq 0 ]; then dnssec-keygen -f KSK -K "{{ bind_zonefile_location }}/dnssec_keys/KSK/{{ item.zone_name }}" -a RSASHA512 -b 2048 -n ZONE -C "{{ item.zone_name }}"; fi; cp {{ bind_zonefile_location }}/dnssec_keys/KSK/{{ item.zone_name }}/*.key {{ bind_zonefile_location }}/zone_fragments/{{ item.zone_name }}/99-KSK-dnssec
+  with_items: bind_master_zones
+  tags: bind
+
+- name: Create forward lookup zone file
+  template:
+    src: multi_bind_zone.j2
+    dest: "{{ bind_zonefile_location }}/zone_fragments/{{ item.zone_name }}/01-{{ item.zone_name }}"
+    owner: root
+    group: named
+    mode: "0640"
+    setype: named_zone_t
+#    validate: "named-checkzone {{ item.zone_name }} %s"
+  notify: restart bind
+  tags: bind
+  with_items: bind_master_zones
+  when: bind_master_zones is defined
+
+#- name: copy dnssec keys
+# copy: src="{{ bind_zonefile_location }}/dnssec_keys/{{ item.zone_name }}/*.key" dest="{{ bind_zonefile_location }}/zone_fragments/{{ item.zone_name }}/99-DNSSEC"
+#  tags: bind
+#  with_items: bind_master_zones
+
+- name: assemble zonefiles
+  assemble: src="{{ bind_zonefile_location }}/zone_fragments/{{ item.zone_name }}" dest="{{ bind_zonefile_location }}/{{ item.zone_name }}"
+  tags: bind
+  with_items: bind_master_zones
+
+- name: Create Signed zonefile
+  shell: cd {{ bind_zonefile_location }}; /sbin/dnssec-signzone -e +3024000 -N INCREMENT -o {{ item.zone_name }} -k {{ bind_zonefile_location }}/dnssec_keys/KSK/{{ item.zone_name }}/*.key "{{ bind_zonefile_location }}/{{ item.zone_name }}" {{ bind_zonefile_location }}/dnssec_keys/ZSK/{{ item.zone_name }}/*.key
+  with_items: bind_master_zones
+  tags: bind
+
+- file: state=file path="{{ bind_zonefile_location }}/{{ item.zone_name }}.signed" owner=root group=named
+  with_items: bind_master_zones
+  tags: bind
+
+- name: Create forward lookup zone file
+  template:
+    src: bind_zone.j2
+    dest: "/var/named/{{ bind_zone_name }}"
+    owner: root
+    group: named
+    mode: "0640"
+    setype: named_zone_t
+    validate: "named-checkzone {{  bind_zone_name }} %s"
+  notify: restart bind
+  tags: bind
+  when: bind_master_zones is not defined
+
+- file: state=directory path="{{ bind_zonefile_location }}/zone_fragments/{{ item|reverse_lookup_zone }}"
+  with_items: bind_zone_networks
+  tags: bind
+
+- file: state=directory path="{{ bind_zonefile_location }}/dnssec_keys/ZSK/{{ item|reverse_lookup_zone }}"
+  with_items: bind_zone_networks
+  tags: bind
+
+- file: state=directory path="{{ bind_zonefile_location }}/dnssec_keys/KSK/{{ item|reverse_lookup_zone }}"
+  with_items: bind_zone_networks
+  tags: bind
+
+- set_fact: bind_zonefile_extra_path=/zone_fragments
+
+- name: Create DNSSec Zone Keyfiles
+  shell:  if [ `find "{{ bind_zonefile_location }}/dnssec_keys/ZSK/{{ item|reverse_lookup_zone }}" -iname "K{{ item|reverse_lookup_zone }}\.*.key" | wc -l` -eq 0 ]; then dnssec-keygen -K "{{ bind_zonefile_location }}/dnssec_keys/ZSK/{{ item|reverse_lookup_zone }}" -a RSASHA512 -b 2048 -n ZONE -C "{{ item|reverse_lookup_zone }}"; fi; cp {{ bind_zonefile_location }}/dnssec_keys/ZSK/{{ item|reverse_lookup_zone }}/*.key {{ bind_zonefile_location }}/zone_fragments/{{ item|reverse_lookup_zone }}/98-ZSK-dnssec
+  with_items: bind_master_zones
+  with_items: bind_zone_networks
+  tags: bind
+
+- name: Create DNSSec Key Keyfiles
+  shell:  if [ `find "{{ bind_zonefile_location }}/dnssec_keys/KSK/{{ item|reverse_lookup_zone }}" -iname "K{{ item|reverse_lookup_zone }}\.*.key" | wc -l` -eq 0 ]; then dnssec-keygen -f KSK -K "{{ bind_zonefile_location }}/dnssec_keys/KSK/{{ item|reverse_lookup_zone }}" -a RSASHA512 -b 2048 -n ZONE -C "{{ item|reverse_lookup_zone }}"; fi; cp {{ bind_zonefile_location }}/dnssec_keys/KSK/{{ item|reverse_lookup_zone }}/*.key {{ bind_zonefile_location }}/zone_fragments/{{ item|reverse_lookup_zone }}/99-KSK-dnssec
+  with_items: bind_master_zones
+  with_items: bind_zone_networks
+  tags: bind
+
+- name: Create reverse lookup zone file
+  template:
+    src: multi_reverse_zone.j2
+    dest: "{{ bind_zonefile_location }}/zone_fragments/{{ item|reverse_lookup_zone }}/01-{{ item|reverse_lookup_zone }}"
+    owner: root
+    group: named
+    mode: "0640"
+    setype: named_zone_t
+#    validate: "named-checkzone {{ item|reverse_lookup_zone }} %s"
+  with_items: bind_zone_networks
+  notify: restart bind
+  tags: bind
+  when: bind_master_zones is defined
+
+#- name: copy dnssec keys
+# copy: src="{{ bind_zonefile_location }}/dnssec_keys/{{ item|reverse_lookup_zone }}/*.key" dest="{{ bind_zonefile_location }}/zone_fragments/{{ item|reverse_lookup_zone }}/99-DNSSEC"
+#  tags: bind
+#  with_items: bind_zone_networks
+
+- name: assemble zonefiles
+  assemble: src="{{ bind_zonefile_location }}/zone_fragments/{{ item|reverse_lookup_zone }}" dest="{{ bind_zonefile_location }}/{{ item|reverse_lookup_zone }}"
+  tags: bind
+  with_items: bind_zone_networks
+
+- name: Create Signed zonefile
+  shell: cd {{ bind_zonefile_location }}; /sbin/dnssec-signzone -e +3024000 -N INCREMENT -o {{ item|reverse_lookup_zone }} -k {{ bind_zonefile_location }}/dnssec_keys/KSK/{{ item|reverse_lookup_zone }}/*.key "{{ bind_zonefile_location }}/{{ item|reverse_lookup_zone }}" {{ bind_zonefile_location }}/dnssec_keys/ZSK/{{ item|reverse_lookup_zone }}/*.key
+  with_items: bind_zone_networks
+  tags: bind
+
+- file: state=file path="{{ bind_zonefile_location }}/{{ item|reverse_lookup_zone }}.signed" owner=root group=named
+  with_items: bind_zone_networks
+  tags: bind
+
+- name: Create reverse lookup zone file
+  template:
+    src: reverse_zone.j2
+    dest: "/var/named/{{ item|reverse_lookup_zone }}"
+    owner: root
+    group: named
+    mode: "0640"
+    setype: named_zone_t
+    validate: "named-checkzone {{ item|reverse_lookup_zone }} %s"
+  with_items: bind_zone_networks
+  notify: restart bind
+  tags: bind
+  when: bind_master_zones is not defined

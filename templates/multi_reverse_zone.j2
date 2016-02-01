@@ -1,0 +1,60 @@
+; Reverse zone file for {{ item }}
+; {{ ansible_managed }}
+; vi: ft=bindzone
+
+$TTL {{ bind_zone_ttl }}
+$ORIGIN {{ item|reverse_lookup_zone }}.
+
+{% if bind_core_name_servers is defined %}
+@ IN SOA {{ bind_core_name_servers|first }}. {% if item.zone_hostmaster_email is string %}{{ item.zone_hostmaster_email }}.{{ item.zone_name }}{% else %}{{ bind_hostmaster_email }}{% endif %}.  (
+{% else %}
+@ IN SOA {{ ansible_hostname }}.{{ bind_zone_name }}. {% if item.zone_hostmaster_email is string %}{{ item.zone_hostmaster_email }}.{{ item.zone_name }}{% else %}{{ bind_hostmaster_email }}{% endif %}. (
+{% endif %}
+                {% if named_serial is defined %}{{ named_serial.stdout }}{% else %}{{ timestamp.stdout }}{% endif %} ; Serial, todays date #ZFSERIALNO
+                {{ bind_zone_time_to_refresh }} ; Refresh
+                {{ bind_zone_time_to_retry }} ; Retry
+                {{ bind_zone_time_to_expire }} ; Expire
+                {{ bind_zone_minimum_ttl }} ) ; Minimum
+
+{% if bind_core_name_servers is defined %}
+{% for ns in bind_core_name_servers %}
+                     IN  NS     {{ ns }}.
+{% endfor %}
+{% else %}
+                     IN  NS     {{ ansible_hostname }}.{{ bind_zone_name }}.
+{% endif %}
+{% if bind_other_name_servers is defined %}
+{% for ns in bind_other_name_servers %}
+                     IN  NS     {{ ns }}.
+{% endfor %}
+{% endif %}
+
+{% if bind_master_zones is defined -%}
+  {% for zone in bind_master_zones -%}
+    {% if zone.zone_hosts is defined -%}
+      {% for host in zone.zone_hosts -%}
+        {% if host.ip is string and host.ip.startswith(item) -%}
+{% if host.name == '@' %}
+{{ ('.'.join(host.ip.replace(item+'.','').split('.')[::-1])).ljust(8) }} IN  PTR  {{ zone.zone_name }}.
+{% else %}
+{{ ('.'.join(host.ip.replace(item+'.','').split('.')[::-1])).ljust(8) }} IN  PTR  {{ host.name }}.{{ zone.zone_name }}.
+{% endif %}
+{% else -%}
+{% for ip in host.ip -%}
+{% if ip.startswith(item) %}
+{{ ('.'.join(ip.replace(item+'.','').split('.')[::-1])).ljust(8) }} IN  PTR  {{ zone.zone_name }}.
+{% if host.name != '@' %}
+{{ ('.'.join(ip.replace(item+'.','').split('.')[::-1])).ljust(8) }} IN  PTR  {{ host.name }}.{{ zone.zone_name }}.
+{% endif %}
+{% endif %}
+{%- endfor %}
+        {%- endif %}
+      {%- endfor %}
+    {% else %}
+{{ ('.'.join(ansible_default_ipv4.address.replace(item+'.','').split('.')[::-1])).ljust(8) }} IN  PTR  {{ ansible_hostname }}.{{ zone.zone_name }}.
+    {% endif %}
+  {%- endfor %}
+{%- endif %}
+
+{# vim: ft=text
+#}
